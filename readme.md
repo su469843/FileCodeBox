@@ -193,7 +193,8 @@ FileCodeBox 是一个基于 FastAPI + Vue3 开发的轻量级文件分享工具�
 #### Docker CLI
 
 ```bash
-docker run -d --restart=always -p 12345:12345 -v /opt/FileCodeBox/:/app/data --name filecodebox lanol/filecodebox:beta
+docker run -d --restart=always -p 12345:12345 -v /opt/FileCodeBox/:/app/data --name filecodebox suyuhang2013/filecodebox:latest
+
 ```
 
 #### Docker Compose
@@ -202,7 +203,7 @@ docker run -d --restart=always -p 12345:12345 -v /opt/FileCodeBox/:/app/data --n
 version: "3"
 services:
   file-code-box:
-    image: lanol/filecodebox:latest
+    image: suyuhang2013/filecodebox:latest
     volumes:
       - fcb-data:/app/data:rw
     restart: unless-stopped
@@ -230,7 +231,7 @@ location / {
 1. 克隆项目
 
 ```bash
-git clone https://github.com/vastsa/FileCodeBox.git
+git clone https://github.com/su469843/filecodebox.git
 ```
 
 2. 安装依赖
