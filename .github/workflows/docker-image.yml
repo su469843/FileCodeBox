@@ -1,50 +1,79 @@
-name: Build and push Docker image
+name: Build and Push Multi-Platform Docker Image
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - master
+    branches: [ "main", "master" ]    # 推送到主分支时触发
+    tags: [ 'v*.*.*' ]                # 推送版本标签时触发 (例如 v1.0.0)
+  workflow_dispatch:                   # 允许手动触发工作流
+
+env:
+  IMAGE_NAME: your-image-name          # 替换为你的镜像名称
+  REGISTRY: docker.io                  # 默认 Docker Hub 注册中心
 
 jobs:
-  buildx:
+  build-and-push:
+    name: Build and push Docker image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      # 步骤 1: 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive        # 如果项目有子模块，请取消注释
 
+      # 步骤 2: 设置 QEMU 仿真 (用于跨平台构建)
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
+      # 步骤 3: 设置 Docker Buildx
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
+        id: buildx
 
-      - name: Cache Docker layers
-        uses: actions/cache@v3
+      # 步骤 4: 登录到 Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
+      # 步骤 5: 提取元数据 (自动生成标签和标签)
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          images: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.ref == format('refs/heads/{0}', 'master') }}
 
-      - name: Build and push
-        uses: docker/build-push-action@v4
+      # 步骤 6: 构建并推送 Docker 镜像 (核心步骤)
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/filecodebox:beta
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-      - name: Move cache
+          context: .                                       # 构建上下文路径
+          platforms: linux/amd64,linux/arm64,linux/arm/v7  # 目标平台架构
+          push: ${{ github.event_name != 'pull_request' }} # 非PR时推送
+          tags: ${{ steps.meta.outputs.tags }}             # 使用元数据生成的标签
+          labels: ${{ steps.meta.outputs.labels }}         # 使用元数据生成的标签
+          cache-from: type=gha                            # 使用 GitHub Actions 缓存
+          cache-to: type=gha,mode=max                     # 缓存到 GitHub Actions
+          # 如果你的 Dockerfile 不在根目录，请指定 file 参数
+          # file: ./path/to/Dockerfile
+
+      # (可选) 步骤 7: 验证镜像清单
+      - name: Verify image manifest
+        if: success() && github.event_name != 'pull_request'
         run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          # 选择一个标签进行验证
+          TAG="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
+          docker buildx imagetools inspect $TAG
